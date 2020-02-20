@@ -1,6 +1,6 @@
 # µPlot is a micro-library for scientific plotting
 
-You can have a look to the code but this is a work in progress.
+You can have a look at the code but this is largely a work in progress.
 
 
 ## Guidelines
