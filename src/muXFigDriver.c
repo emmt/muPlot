@@ -17,15 +17,66 @@
 #include <math.h>
 #include "muPlotPriv.h"
 
-#define true (!0)
-#define false (!true)
-
 #define MILLIMETERS_PER_INCH 25.4
 #define MP_A4_PAPER_WIDTH     210
 #define MP_A4_PAPER_HEIGHT    297
 
 #define MP_FLIP_X   (1 << 0)
 #define MP_FLIP_Y   (1 << 1)
+
+/*
+ * Color indices of primary colors for XFig.  All these (approximately) map to the
+ * 10 standard colors of µPlot.
+ */
+#define XFIG_COLOR_DEFAULT   -1
+#define XFIG_COLOR_BLACK      0
+#define XFIG_COLOR_BLUE       1
+#define XFIG_COLOR_GREEN      2
+#define XFIG_COLOR_CYAN       3
+#define XFIG_COLOR_RED        4
+#define XFIG_COLOR_MAGENTA    5
+#define XFIG_COLOR_YELLOW     6
+#define XFIG_COLOR_WHITE      7
+
+/*
+ * Correspondance between color indices.
+ *
+ * XFig has 32 read-only colors at indices 0-31 and a maximum of 512 possible
+ * user defined colors at indices 32-543.  Clearly, the first 32 colors of XFig
+ * belong to the 1st colormap of µPlot (intended for distinctive colors) while
+ * the user defined colors belong to the 2nd colormap of µPlot (intended for
+ * continuous colors).  Out of these, the first ones (XFig color indices -1 to
+ * 7) match the 10 standard µPlot colors (at indices 0-9) assuming "Background"
+ * for µPlot is "White" for XFig and "Foreground" for µPlot is "Default" for
+ * XFig.  Remaining low color indices 8-31 (24 in total) of XFig can also be
+ * considered as non-standard colors of the 1st colormap.  Hence the size of
+ * the 1st colormap is 34 (10 + 24) for XFig while the maximum size for the
+ * second colormap is 512.  Except for the 10 first color indices of µPlot
+ * which require a special mapping, all µPlot color indices `ci` greater or
+ * equal 10 correspond to color index `ci - 2` in XFig.
+ *
+ * To simplify the code, we allocate the maximum number of colors and keep
+ * track of the number of user defined colors.
+ */
+#define XFIG_COLORMAP_SIZE_1  34
+#define XFIG_COLORMAP_SIZE_2 512 /* This is the maximum value. */
+#define XFIG_COLOR_INDEX(ci)  ((ci) < 10 ? standardColors[ci] : (int)(ci) - 1)
+
+/*
+ * The following table maps standard µPlot color indices to XFig colors.
+ */
+static int standardColors[] = {
+    XFIG_COLOR_WHITE,   /* MP_COLOR_BACKGROUND */
+    XFIG_COLOR_DEFAULT, /* MP_COLOR_FOREGROUND */
+    XFIG_COLOR_RED,
+    XFIG_COLOR_GREEN,
+    XFIG_COLOR_BLUE,
+    XFIG_COLOR_CYAN,
+    XFIG_COLOR_MAGENTA,
+    XFIG_COLOR_YELLOW,
+    XFIG_COLOR_BLACK,
+    XFIG_COLOR_WHITE,
+};
 
 typedef enum {
     XFIG_COLOR_OBJECT_TYPE    = 0,
@@ -81,7 +132,7 @@ typedef enum {
 } XFigArrowStyle;
 
 
-#define XFIG_C0MIN  -1
+#define XFIG_C0MIN   0
 #define XFIG_C0MAX  31 /* Gold */
 #define XFIG_C1MIN  32
 #define XFIG_C1MAX 543
@@ -92,31 +143,104 @@ typedef enum {
 typedef struct _XFigDevice XFigDevice;
 
 struct _XFigDevice {
-    MpDevice base;
-    MpColor colors[XFIG_NCOLORS];
+    MpDevice pub;
+
     int stage; /* Initially 0, becomes 1 after the first graphic object has
                   been written; user defined colors can only be written at
                   stage = 0. */
-
-    XFigLineStyle lineStyle;
-    int lineWidth;
-    MpColorIndex colorIndex; // FIXME: In base?
-    MpColorIndex fillColor;
-    int penStyle; // pen style, not used
-    int areaFill; // enumeration
-    double styleVal; // 1/80 inch, specification for dash/dotted lines
-    XFigJoinStyle        joinStyle;   // enumeration type)
-    XFigCapStyle       capStyle;    // enumeration type, only used for POLYLINE
-    int           radius;        // 1/80 inch, radius of arc-boxes)
-    int     forwardArrow; // forwardArrow (0: off, 1: on)
-    int    backwardArrow; // backwardArrow (0: off, 1: on)
-    int pictureOrientation;
-    const char* pictureName;
+    int          dotsPerInch;
+    XFigLineStyle  lineStyle;
+    int            lineWidth;
+    MpColorIndex   fillColor;
+    int             penStyle; // pen style, not used
+    int             areaFill; // enumeration
+    double          styleVal; // 1/80 inch, specification for dash/dotted lines
+    XFigJoinStyle  joinStyle;   // enumeration type)
+    XFigCapStyle    capStyle;    // enumeration type, only used for POLYLINE
+    int               radius;        // 1/80 inch, radius of arc-boxes)
+    int         forwardArrow; // forwardArrow (0: off, 1: on)
+    int        backwardArrow; // backwardArrow (0: off, 1: on)
+    int   pictureOrientation;
+    const char*  pictureName;
+    const char*    paperSize;
     FILE* file;
 };
 
+
+
+/* Encode RBG with colorants in bytes */
+#define encodeColor(dst,r,g,b)                                          \
+    MpEncodeColor(dst, (MpReal)(r)/(MpReal)255,                         \
+                      (MpReal)(g)/(MpReal)255, (MpReal)(b)/(MpReal)255)
+
+static void
+warnColorMismatch(const char* A, const char* B)
+{
+    fprintf(stderr,
+            "Warning: µPlot \"%s\" color does not match XFig \"%s\" color.\n",
+            A, B);
+}
+
+#define CHECK_COLOR(A, B)                                       \
+    do {                                                        \
+        if (XFIG_COLOR_INDEX(MP_COLOR_##A) != XFIG_COLOR_##B) { \
+            warnColorMismatch(#A, #B);                          \
+        }                                                       \
+    } while (0)
+
 static MpStatus
-closeXFigDevice(MpDevice* dev)
+initializeXFigDevice(MpDevice* dev)
+{
+    MpStatus status = MP_OK;
+
+    if (dev->colormapSize != XFIG_NCOLORS) {
+        return MP_BAD_SIZE;
+    }
+
+    /* Check mapping of color indices. */
+    CHECK_COLOR(BACKGROUND, WHITE);
+    CHECK_COLOR(FOREGROUND, DEFAULT);
+    CHECK_COLOR(RED,        RED);
+    CHECK_COLOR(GREEN,      GREEN);
+    CHECK_COLOR(BLUE,       BLUE);
+    CHECK_COLOR(CYAN,       CYAN);
+    CHECK_COLOR(MAGENTA,    MAGENTA);
+    CHECK_COLOR(YELLOW,     YELLOW);
+    CHECK_COLOR(BLACK,      BLACK);
+    CHECK_COLOR(WHITE,      WHITE);
+
+    /* FIXME: need to define the followinh XFig colors. */
+    /*    8-11 = four shades of blue (dark to lighter) */
+    /*   12-14 = three shades of green (dark to lighter) */
+    /*   15-17 = three shades of cyan (dark to lighter) */
+    /*   18-20 = three shades of red (dark to lighter) */
+    /*   21-23 = three shades of magenta (dark to lighter) */
+    /*   24-26 = three shades of brown (dark to lighter) */
+    /*   27-30 = four shades of pink (dark to lighter) */
+    if (dev->colormapSize1 > 31+2) {
+        /* 31 = Gold, +2 to match µPlot color index */
+        MpEncodeColor(&dev->colormap[31+2], 255, 215, 0);
+    }
+
+    /* Initialize colormap CMAP1 with a ramp of grays. */
+    if (dev->colormapSize2 > 100) {
+        /* Use at most 100 colors by default. */
+        dev->colormapSize2 = 100;
+        dev->colormapSize = dev->colormapSize1 + dev->colormapSize2;
+
+    }
+    if (dev->colormapSize2 > 1) {
+        MpReal a = (MpReal)1/(MpReal)(dev->colormapSize2 - 1);
+        for (MpInt i = 0; i < dev->colormapSize2; ++i) {
+            MpReal g = a*i;
+            MpEncodeColor(&dev->colormap[dev->colormapSize1 + i], g,g,g);
+        }
+    }
+    return status;
+}
+
+static MpStatus
+finalizeXFigDevice(MpDevice* dev)
 {
     MpStatus status = MP_OK;
     XFigDevice* xfig = (XFigDevice*)dev;
@@ -130,43 +254,40 @@ closeXFigDevice(MpDevice* dev)
 }
 
 static MpStatus
-selectXFigDevice(MpDevice* dev)
+setXFigColormapSizes(MpDevice* dev, MpInt n1, MpInt n2)
 {
-    return MP_OK;
+    /* Note: Arguments have bee checked and this method is only called if at
+       least of n1 or n2 is different from the current settings. */
+    XFigDevice* xfig = (XFigDevice*)dev;
+    if (xfig->stage > 0) {
+        /* Too late to chage colormap sizes. */
+        return MP_READ_ONLY;
+    }
+    MpStatus status = MP_OK;
+    if (n1 != dev->colormapSize1) {
+        /* The size of 1st colormap cannot be changed. */
+        status = MP_BAD_SIZE;
+    }
+    if (n2 < 0) {
+        n2 = 0;
+        status = MP_BAD_SIZE;
+    } else if (n2 > XFIG_COLORMAP_SIZE_2) {
+        n2 = XFIG_COLORMAP_SIZE_2;
+        status = MP_BAD_SIZE;
+    }
+    if (n2 != dev->colormapSize2) {
+        dev->colormapSize2 = n2;
+        dev->colormapSize = dev->colormapSize1 + dev->colormapSize2;
+    }
+    return status;
 }
 
-static MpStatus getXFigColorRanges(MpDevice* dev,
-                                   MpColorIndex* c0min, MpColorIndex* c0max,
-                                   MpColorIndex* c1min, MpColorIndex* c1max)
-{
-    *c0min = XFIG_C0MIN; /* Default color read-only */
-    *c0max = XFIG_C0MAX;
-    *c1min = XFIG_C1MIN;
-    *c1max = XFIG_C1MAX;
-    return MP_OK;
-}
-
+/* FIXME: This is the default behavior? */
 static MpStatus setXFigColorIndex(MpDevice* dev, MpColorIndex ci)
 {
-    MpStatus status = MP_OK;
-    XFigDevice* xfig = (XFigDevice*)dev;
-    if (ci < 0) {
-        /* Use default color. */
-        ci = -1;
-    }
-    if (ci >= XFIG_NCOLORS) {
-        ci = XFIG_NCOLORS - 1;
-    }
-    xfig->colorIndex = ci;
-    return status;
-}
-
-static MpStatus getXFigColorIndex(MpDevice* dev, MpColorIndex* ci)
-{
-    MpStatus status = MP_OK;
-    XFigDevice* xfig = (XFigDevice*)dev;
-    *ci = xfig->colorIndex;
-    return status;
+    /* Note: Arguments have been checked. */
+    dev->colorIndex = ci;
+    return MP_OK;
 }
 
 static MpStatus setXFigColor(MpDevice* dev, MpColorIndex ci, MpReal rd, MpReal gr, MpReal bl)
@@ -179,44 +300,11 @@ static MpStatus setXFigColor(MpDevice* dev, MpColorIndex ci, MpReal rd, MpReal g
         return MP_READ_ONLY;
     }
     /* Note: Color levels have already been clamped. */
-    xfig->colors[ci].red   = rd;
-    xfig->colors[ci].green = gr;
-    xfig->colors[ci].blue  = bl;
+    dev->colormap[ci].red   = rd;
+    dev->colormap[ci].green = gr;
+    dev->colormap[ci].blue  = bl;
     return MP_OK;
 }
-
-static MpStatus getXFigColor(MpDevice* dev, MpColorIndex ci, MpReal* rd, MpReal* gr, MpReal* bl)
-{
-    XFigDevice* xfig = (XFigDevice*)dev;
-    if (ci < XFIG_C0MIN || ci > XFIG_CMAX) {
-        return MP_OUT_OF_RANGE;
-    }
-    if (ci < 0) {
-        /* Assume default color is black. */
-        *rd = 0;
-        *gr = 0;
-        *bl = 0;
-    } else {
-        *rd = xfig->colors[ci].red;
-        *gr = xfig->colors[ci].green;
-        *bl = xfig->colors[ci].blue;
-    }
-    return MP_OK;
-}
-
-static MpColor
-MpEncodeColor(MpReal red, MpReal green, MpReal blue)
-{
-    MpColor color; // = {.red = red, .green = green, .blue = blue};
-    color.red   = red;
-    color.green = green;
-    color.blue  = blue;
-    return color;
-}
-
-#define COLOR(r,g,b) MpEncodeColor((MpReal)(r)/(MpReal)255,   \
-                                   (MpReal)(g)/(MpReal)255,   \
-                                   (MpReal)(b)/(MpReal)255)
 
 static unsigned
 colorant(MpReal val)
@@ -228,50 +316,44 @@ colorant(MpReal val)
               (unsigned)round((double)val*(double)255))));
 }
 
-static void
+static MpStatus
 bumpXFigStage(XFigDevice* xfig)
 {
     if (xfig->stage == 0) {
+        /* Write XFig header information. */
+        fprintf(xfig->file, "#FIG 3.2\n");
+        fprintf(xfig->file, "%s\n",
+                xfig->pub.pageWidth <= xfig->pub.pageHeight ? "Portrait" : "Landscape");
+        fprintf(xfig->file, "Center\n"); /* "Center" or "Flush Left" */
+        fprintf(xfig->file, "Metric\n"); /* "Metric" or "Inches" */
+        fprintf(xfig->file, "%s\n", xfig->paperSize); /* papersize */
+        fprintf(xfig->file, "%.2f\n", 100.0); /* magnification */
+        fprintf(xfig->file, "Single\n"); /* multiple-page ("Single" or "Multiple" pages) */
+        fprintf(xfig->file, "%d\n", -2); /*  transparent color (color number for
+                                             transparent color for GIF
+                                             export. -3=background, -2=None,
+                                             -1=Default, 0-31 for standard colors
+                                             or 32- for user colors) */
+        fprintf(xfig->file, "# Created by muPlot.\n"); /* comment (An optional set of comments may be here,
+                                                          which are associated with the whole figure) */
+        fprintf(xfig->file, "%d %d\n", xfig->dotsPerInch, 2);
+        /* resolution coord_system (Fig units/inch and coordinate system:
+           1: origin at lower left corner (NOT USED)
+           2: upper left) */
+
         /* Write definitions of arbitrary user defined colors beyond the 32
            standard colors.  The color objects must be defined before any other
            Fig objects. */
         for (int ci = XFIG_C1MIN; ci <= XFIG_C1MAX; ++ci) {
             fprintf(xfig->file, "%d %d #%02x%02x%02x\n",
                     XFIG_COLOR_OBJECT_TYPE, ci,
-                    colorant(xfig->colors[ci].red),
-                    colorant(xfig->colors[ci].green),
-                    colorant(xfig->colors[ci].blue));
+                    colorant(xfig->pub.colormap[ci].red),
+                    colorant(xfig->pub.colormap[ci].green),
+                    colorant(xfig->pub.colormap[ci].blue));
         }
         xfig->stage = 1;
     }
-}
-
-static void
-setXFigInitialColors(XFigDevice* xfig)
-{
-    xfig->colors[0] = MpEncodeColor(0,0,0); /* 0 = Black */
-    xfig->colors[1] = MpEncodeColor(0,0,1); /* 1 = Blue */
-    xfig->colors[2] = MpEncodeColor(0,1,0); /* 2 = Green */
-    xfig->colors[3] = MpEncodeColor(0,1,1); /* 3 = Cyan */
-    xfig->colors[4] = MpEncodeColor(1,0,0); /* 4 = Red */
-    xfig->colors[5] = MpEncodeColor(1,0,1); /* 5 = Magenta */
-    xfig->colors[6] = MpEncodeColor(1,1,0); /* 6 = Yellow */
-    xfig->colors[7] = MpEncodeColor(1,1,1); /* 7 = White */
-    /*    8-11 = four shades of blue (dark to lighter) */
-    /*   12-14 = three shades of green (dark to lighter) */
-    /*   15-17 = three shades of cyan (dark to lighter) */
-    /*   18-20 = three shades of red (dark to lighter) */
-    /*   21-23 = three shades of magenta (dark to lighter) */
-    /*   24-26 = three shades of brown (dark to lighter) */
-    /*   27-30 = four shades of pink (dark to lighter) */
-    xfig->colors[31] = COLOR(255, 215, 0); /* 31 = Gold */
-
-    /* Initialize colormap CMAP1 with a ramp of grays. */
-    MpReal a = (MpReal)1/(MpReal)(XFIG_C1MAX - XFIG_C1MIN);
-    for (MpInt ci = XFIG_C1MIN; ci <= XFIG_C1MAX; ++ci) {
-        MpReal g = (ci - XFIG_C1MIN)*a;
-        xfig->colors[ci] = MpEncodeColor(g,g,g);
-    }
+    return MP_OK;
 }
 
 static MpStatus
@@ -287,13 +369,16 @@ drawXFigPolylineObject(XFigDevice* xfig, int subType, int depth,
     } else if (depth > 999) {
         depth = 999;
     }
-    bumpXFigStage(xfig);
+    MpStatus status = bumpXFigStage(xfig);
+    if (status != MP_OK) {
+        return status;
+    }
     fprintf(xfig->file, "2 %d %d %d %d %d %d %d %d %d %.3f %d %d %d %d %d %ld\n",
             XFIG_POLYLINE_OBJECT_TYPE,
             subType,
             xfig->lineStyle,
             xfig->lineWidth,
-            (int)xfig->colorIndex,
+            XFIG_COLOR_INDEX(xfig->pub.colorIndex),
             (int)xfig->fillColor,
             depth,
             xfig->penStyle, // pen style, not used
@@ -329,7 +414,7 @@ drawXFigPolylineObject(XFigDevice* xfig, int subType, int depth,
     } else {
         fputs("\n", xfig->file);
     }
-    return MP_OK;
+    return status;
 }
 
 static MpStatus
@@ -381,62 +466,45 @@ MpOpenXFigDevice(MpDevice** devptr, const char* ident, const char* arg)
         return MP_BAD_FILENAME;
     }
 
-    /* Allocate structure and instanciate it. */
+    /* Allocate structure and instanciate methods. */
     MpDevice* dev = MpAllocateDevice(sizeof(XFigDevice));
     *devptr = dev;
     if (dev == NULL) {
         return MP_NO_MEMORY;
     }
-    dev->select = selectXFigDevice;
+    dev->initialize = initializeXFigDevice;
+    dev->finalize = finalizeXFigDevice;
     dev->setColorIndex = setXFigColorIndex;
+    dev->setColormapSizes = setXFigColormapSizes;
     dev->setColor = setXFigColor;
     dev->drawPoint = drawXFigPoint;
     dev->drawRectangle = drawXFigRectangle;
     dev->drawPolyline = drawXFigPolyline;
     dev->drawPolygon = drawXFigPolygon;
-    dev->colormapSize0 = (XFIG_C0MAX + 1 - XFIG_C0MIN);
-    dev->colormapSize1 = (XFIG_C1MAX + 1 - XFIG_C1MIN);
-    // FIXME: dev->colormapSize = dev->colormapSize0 + dev->colormapSize1;
 
+    /* Open output file. */
     XFigDevice* xfig = (XFigDevice*)dev;
     xfig->file = fopen(arg, "w");
     if (xfig->file == NULL) {
         free((void*)dev);
         return MpSystemError();
     }
-    xfig->colorIndex = XFIG_C0MIN;
-    setXFigInitialColors(xfig);
 
+    /* Initialize private settings (assuming A4 paper). */
+    xfig->paperSize = "A4";
+    xfig->dotsPerInch = 1200;
 
-    /* Page settings (assuming A4 paper). */
-    const char* paperSize = "A4";
-    int dotsPerInch = 1200;
-    double dotsPerMillimeter = (double)dotsPerInch/MILLIMETERS_PER_INCH;
+    /* Initialize some public device settings.  Set the size of the secondary
+       colormap to be the maximum possible. */
+    double dotsPerMillimeter = (double)xfig->dotsPerInch/MILLIMETERS_PER_INCH;
     dev->pageWidth = MP_A4_PAPER_WIDTH;
     dev->pageWidth = MP_A4_PAPER_HEIGHT;
     dev->horizontalResolution = dotsPerMillimeter;
     dev->verticalResolution = dotsPerMillimeter;
     dev->horizontalSamples = round(dev->pageWidth*dev->horizontalResolution);
     dev->verticalSamples = round(dev->pageHeight*dev->verticalResolution);
-
-    /* Write XFig header information. */
-    fprintf(xfig->file, "#FIG 3.2\n");
-    fprintf(xfig->file, "%s\n",
-            dev->pageWidth <= dev->pageHeight ? "Portrait" : "Landscape");
-    fprintf(xfig->file, "Center\n"); /* "Center" or "Flush Left" */
-    fprintf(xfig->file, "Metric\n"); /* "Metric" or "Inches" */
-    fprintf(xfig->file, "%s\n", paperSize); /* papersize */
-    fprintf(xfig->file, "%.2f\n", 100.0); /* magnification */
-    fprintf(xfig->file, "Single\n"); /* multiple-page ("Single" or "Multiple" pages) */
-    fprintf(xfig->file, "%d\n", -2); /*  transparent color (color number for
-                                         transparent color for GIF
-                                         export. -3=background, -2=None,
-                                         -1=Default, 0-31 for standard colors
-                                         or 32- for user colors) */
-    fprintf(xfig->file, "# Created by muPlot.\n"); /* comment (An optional set of comments may be here,
-                                                      which are associated with the whole figure) */
-    fprintf(xfig->file, "%d %d\n", dotsPerInch, 2); /* resolution coord_system (Fig units/inch and coordinate system:
-                                                       1: origin at lower left corner (NOT USED)
-                                                       2: upper left) */
+    dev->colormapSize1 = XFIG_COLORMAP_SIZE_1;
+    dev->colormapSize2 = XFIG_COLORMAP_SIZE_2;
+    dev->colorIndex = MP_COLOR_FOREGROUND;
     return MP_OK;
 }

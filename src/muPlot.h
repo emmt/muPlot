@@ -14,6 +14,7 @@
 #ifndef _MUPLOT_H_
 #define _MUPLOT_H_ 1
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -71,7 +72,7 @@ _MP_BEGIN_DECLS
 
 typedef float   MpReal;
 typedef long    MpInt;
-typedef int     MpBool; /* FIXME: see bool.h */
+typedef bool    MpBool;
 typedef MpInt   MpColorIndex;
 typedef int16_t MpPoint; /* for device coordinates, sufficient for giga-pixel images */
 
@@ -86,6 +87,21 @@ struct _MpColor {
     MpReal green;
     MpReal blue;
 };
+
+/*
+ * There are 10 predefined colors in µPlot.  Altough colors can be redefined by
+ * the user, device drivers should start with these colors.
+ */
+#define MP_COLOR_BACKGROUND 0
+#define MP_COLOR_FOREGROUND 1
+#define MP_COLOR_RED        2
+#define MP_COLOR_GREEN      3
+#define MP_COLOR_BLUE       4
+#define MP_COLOR_CYAN       5
+#define MP_COLOR_MAGENTA    6
+#define MP_COLOR_YELLOW     7
+#define MP_COLOR_BLACK      8
+#define MP_COLOR_WHITE      9
 
 typedef enum {
     MP_SOLID_LINE              =  0,
@@ -119,13 +135,14 @@ typedef struct _MpAffineTransformDbl MpCoordinateTransform;
     _MP_STATUS(MP_BAD_IDENTIFIER,    6, "invalid identifier")           \
     _MP_STATUS(MP_BAD_METHOD,        7, "invalid method")               \
     _MP_STATUS(MP_BAD_SETTINGS,      8, "invalid settings")             \
-    _MP_STATUS(MP_NOT_FOUND,         9, "not found")                    \
-    _MP_STATUS(MP_NOT_IMPLEMENTED,  10, "not implemented")              \
-    _MP_STATUS(MP_NOT_PERMITTED,    11, "forbidden operation")          \
-    _MP_STATUS(MP_NO_MEMORY,        12, "insufficient memory")          \
-    _MP_STATUS(MP_OUT_OF_RANGE,     13, "out of range value or index")  \
-    _MP_STATUS(MP_READ_ONLY,        14, "read only parameter")          \
-    _MP_STATUS(MP_SINGULAR,         15, "singular system of equations")
+    _MP_STATUS(MP_BAD_SIZE,          9, "invalid size")                 \
+    _MP_STATUS(MP_NOT_FOUND,        10, "not found")                    \
+    _MP_STATUS(MP_NOT_IMPLEMENTED,  11, "not implemented")              \
+    _MP_STATUS(MP_NOT_PERMITTED,    12, "forbidden operation")          \
+    _MP_STATUS(MP_NO_MEMORY,        13, "insufficient memory")          \
+    _MP_STATUS(MP_OUT_OF_RANGE,     14, "out of range value or index")  \
+    _MP_STATUS(MP_READ_ONLY,        15, "read only parameter")          \
+    _MP_STATUS(MP_SINGULAR,         16, "singular system of equations")
 
 typedef enum {
 #define _MP_STATUS(a,b,c) a = b,
@@ -258,17 +275,6 @@ extern MpStatus MpGetResolution(MpDevice* dev, MpReal* xpmm, MpReal* ypmm);
  */
 extern MpStatus MpGetNumberOfSamples(MpDevice* dev, MpPoint* width, MpPoint* height);
 
-/**
- * Select device.
- *
- * This function is called to redirect all plotting calls to a given device.
- *
- * @param dev    The graphic device.
- *
- * @return A standard status: `MP_OK` on success, an error code on failure.
- */
-extern MpStatus MpSelect(MpDevice* dev);
-
 extern MpStatus MpDrawCellsHelper(MpDevice* dev, const MpColorIndex* z,
                                   MpInt n1, MpInt n2, MpInt stride,
                                   MpPoint x0, MpPoint y0, MpPoint x1, MpPoint y1);
@@ -286,6 +292,46 @@ extern MpStatus MpGetLineStyle(MpDevice* dev, MpLineStyle* ls);
 
 extern MpStatus MpSetLineWidth(MpDevice* dev, MpReal lw);
 extern MpStatus MpGetLineWidth(MpDevice* dev, MpReal* lw);
+
+/**
+ * Define standard colors.
+ *
+ * This function defines the 10 standard colors in the primary colormap of a
+ * given device.  This function should only be called at initialization time.
+ *
+ * @param dev     The graphic device.
+ * @param dark    True to define a dark (i.e., black) background.
+ *
+ * @return A standard status: `MP_OK` on success, an error code on failure
+ * (e.g., `MP_BAD_ADDRESS` is the colormap is not allocated or `MP_BAD_SIZE` is
+ * the size of the primary colormap is insufficient.
+ */
+extern MpStatus MpDefineStandardColors(MpDevice* dev, MpBool dark);
+
+extern void MpEncodeColor(MpColor* dst, MpReal rd, MpReal gr, MpReal bl);
+
+/**
+ * Set the number of colors.
+ *
+ * This function attempts to change the number of colors in the primary and/or
+ * secondary colormaps.
+ *
+ * Unsuccessful operation does not mean that nothing has been done: in case of
+ * error, the user may call MpGetColormapSizes() to figure out the actual
+ * number of colors that have been allocated.
+ *
+ * @param dev     The graphic device.
+ *
+ * @param n1      The number of colors for the primary colormap (for most
+ *                devices this cannot be changed).
+ *
+ * @param n2      The number of colors for the secondary colormap.
+ *
+ * @return A standard status: `MP_OK` on success, an error code on failure.
+ */
+extern MpStatus MpSetColormapSizes(MpDevice* dev, MpInt n1, MpInt n2);
+
+extern MpStatus MpGetColormapSizes(MpDevice* dev, MpInt* n1, MpInt* n2);
 
 _MP_END_DECLS
 

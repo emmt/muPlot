@@ -11,6 +11,7 @@
  * Copyright (C) 2020, Éric Thiébaut.
  */
 
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -301,6 +302,14 @@ defaultSetLineWidth(MpDevice* dev, MpReal lw)
     return MP_OK;
 }
 
+static MpStatus
+defaultSetColormapSizes(MpDevice* dev, MpInt n1, MpInt n2)
+{
+    /* Note: Arguments have bee checked and this method is only called if at
+       least of n1 or n2 is different from the current settings. */
+    return MP_READ_ONLY;
+}
+
 MpStatus
 MpCheckMethods(MpDevice* dev)
 {
@@ -311,39 +320,41 @@ MpCheckMethods(MpDevice* dev)
 
     /* Provide substitutes (if possible). */
 #define SUBSTITUTE_METHOD(M,A) if (M == NULL) M = A
-    SUBSTITUTE_METHOD(dev->close,          doNothing);
-    SUBSTITUTE_METHOD(dev->select,         doNothing);
-    SUBSTITUTE_METHOD(dev->setPageSize,    cannotSetPageSize);
-    SUBSTITUTE_METHOD(dev->setResolution,  cannotSetResolution);
-    SUBSTITUTE_METHOD(dev->startBuffering, doNothing);
-    SUBSTITUTE_METHOD(dev->stopBuffering,  doNothing);
-    SUBSTITUTE_METHOD(dev->beginPage,      doNothing);
-    SUBSTITUTE_METHOD(dev->endPage,        doNothing);
-    SUBSTITUTE_METHOD(dev->setColorIndex,  defaultSetColorIndex);
-    SUBSTITUTE_METHOD(dev->setColor,       defaultSetColor);
-    SUBSTITUTE_METHOD(dev->setLineWidth,   defaultSetLineWidth);
-    SUBSTITUTE_METHOD(dev->setLineStyle,   defaultSetLineStyle);
-    SUBSTITUTE_METHOD(dev->drawCells,      MpDrawCellsHelper);
+    SUBSTITUTE_METHOD(dev->initialize,       doNothing);
+    SUBSTITUTE_METHOD(dev->finalize,         doNothing);
+    SUBSTITUTE_METHOD(dev->setPageSize,      cannotSetPageSize);
+    SUBSTITUTE_METHOD(dev->setResolution,    cannotSetResolution);
+    SUBSTITUTE_METHOD(dev->startBuffering,   doNothing);
+    SUBSTITUTE_METHOD(dev->stopBuffering,    doNothing);
+    SUBSTITUTE_METHOD(dev->beginPage,        doNothing);
+    SUBSTITUTE_METHOD(dev->endPage,          doNothing);
+    SUBSTITUTE_METHOD(dev->setColormapSizes, defaultSetColormapSizes);
+    SUBSTITUTE_METHOD(dev->setColorIndex,    defaultSetColorIndex);
+    SUBSTITUTE_METHOD(dev->setColor,         defaultSetColor);
+    SUBSTITUTE_METHOD(dev->setLineWidth,     defaultSetLineWidth);
+    SUBSTITUTE_METHOD(dev->setLineStyle,     defaultSetLineStyle);
+    SUBSTITUTE_METHOD(dev->drawCells,        MpDrawCellsHelper);
 #undef SUBSTITUTE_METHOD
 
     /* Make sure that all methods are defined. */
-    if (dev->close          == NULL ||
-        dev->select         == NULL ||
-        dev->setPageSize    == NULL ||
-        dev->setResolution  == NULL ||
-        dev->startBuffering == NULL ||
-        dev->stopBuffering  == NULL ||
-        dev->beginPage      == NULL ||
-        dev->endPage        == NULL ||
-        dev->setColorIndex  == NULL ||
-        dev->setColor       == NULL ||
-        dev->setLineStyle   == NULL ||
-        dev->setLineWidth   == NULL ||
-        dev->drawPoint      == NULL ||
-        dev->drawRectangle  == NULL ||
-        dev->drawPolyline   == NULL ||
-        dev->drawPolygon    == NULL ||
-        dev->drawCells      == NULL) {
+    if (dev->initialize       == NULL ||
+        dev->finalize         == NULL ||
+        dev->setPageSize      == NULL ||
+        dev->setResolution    == NULL ||
+        dev->startBuffering   == NULL ||
+        dev->stopBuffering    == NULL ||
+        dev->beginPage        == NULL ||
+        dev->endPage          == NULL ||
+        dev->setColormapSizes == NULL ||
+        dev->setColorIndex    == NULL ||
+        dev->setColor         == NULL ||
+        dev->setLineStyle     == NULL ||
+        dev->setLineWidth     == NULL ||
+        dev->drawPoint        == NULL ||
+        dev->drawRectangle    == NULL ||
+        dev->drawPolyline     == NULL ||
+        dev->drawPolygon      == NULL ||
+        dev->drawCells        == NULL) {
         return MP_BAD_METHOD;
     }
     return MP_OK;
@@ -354,10 +365,10 @@ MpCheckColors(MpDevice* dev)
 {
     /* First attempt to fix total number of colors. */
     if (dev->colormapSize == 0) {
-        dev->colormapSize = dev->colormapSize0 + dev->colormapSize1;
+        dev->colormapSize = dev->colormapSize1 + dev->colormapSize2;
     }
-    if (dev->colormapSize0 < 2 || dev->colormapSize1 < 0 ||
-        dev->colormapSize != dev->colormapSize0 + dev->colormapSize1) {
+    if (dev->colormapSize1 < 2 || dev->colormapSize2 < 0 ||
+        dev->colormapSize != dev->colormapSize1 + dev->colormapSize2) {
         return MP_BAD_SETTINGS;
     }
     if (dev->colormap == NULL) {
@@ -366,15 +377,37 @@ MpCheckColors(MpDevice* dev)
             return MP_NO_MEMORY;
         }
     }
+    return MP_OK;
+}
+
+static MpStatus
+intializeDevice(MpDevice* dev)
+{
     MpStatus status = MP_OK;
-#if 0 // FIXME: provide means to initially set colors and color index
-    for (MpColorIndex ci = 0; status == MP_OK && ci < dev->colormapSize; ++ci) {
-        status = dev->setColor(dev, ci,
-                               &dev->colormap[ci].red,
-                               &dev->colormap[ci].green,
-                               &dev->colormap[ci].blue);
+    if (dev == NULL) {
+        status = MP_BAD_ADDRESS;
     }
-#endif
+    if (status == MP_OK) {
+        status = MpCheckPageSettings(dev);
+    }
+    if (status == MP_OK) {
+        status = MpCheckMethods(dev);
+    }
+    if (status == MP_OK) {
+        status = MpCheckColors(dev);
+    }
+    if (status == MP_OK) {
+        status = MpDefineStandardColors(dev, true);
+        if (status != MP_OK && dev->colormapSize1 >= 2) {
+            fprintf(stderr,
+                    "Warning: There are only %ld colors in the primary colormap.\n",
+                    (long)dev->colormapSize1);
+            status = MP_OK;
+        }
+    }
+    if (status == MP_OK) {
+        status = dev->initialize(dev);
+    }
     return status;
 }
 
@@ -400,18 +433,7 @@ MpOpenDevice(MpDevice** devptr, const char* ident, const char* arg)
     }
     if (status == MP_OK) {
         /* Fix/check settings. */
-        if (*devptr == NULL) {
-            status = MP_BAD_ADDRESS;
-        }
-        if (status == MP_OK) {
-            status = MpCheckPageSettings(*devptr);
-        }
-        if (status == MP_OK) {
-            status = MpCheckMethods(*devptr);
-        }
-        if (status == MP_OK) {
-            status = MpCheckColors(*devptr);
-        }
+        status = intializeDevice(*devptr);
         if (status != MP_OK) {
             MpCloseDevice(devptr);
         }
@@ -425,7 +447,7 @@ finalizeDevice(MpDevice* dev)
     MpStatus status = MP_OK;
     if (dev != NULL) {
         /* Device not yet closed. */
-        status = dev->close(dev);
+        status = dev->finalize(dev);
         if (dev->colormap != NULL) {
             free((void*)dev->colormap);
             dev->colormap = NULL;
@@ -508,12 +530,6 @@ MpGetNumberOfSamples(MpDevice* dev, MpPoint* width, MpPoint* height)
     *width  = dev->horizontalSamples;
     *height = dev->verticalSamples;
     return MP_OK;
-}
-
-MpStatus
-MpSelect(MpDevice* dev)
-{
-    return (dev == NULL ? MP_BAD_ADDRESS : dev->select(dev));
 }
 
 MpStatus
@@ -698,4 +714,82 @@ MpGetLineWidth(MpDevice* dev, MpReal* lw)
     }
     *lw = dev->lineWidth;
     return MP_OK;
+}
+
+MpStatus
+MpDefineStandardColors(MpDevice* dev, MpBool dark)
+{
+    MpStatus status = MP_OK;
+    if (status == MP_OK && dev == NULL) {
+        status = MP_BAD_ADDRESS;
+    }
+    if (status == MP_OK && dev->colormap == NULL) {
+        dev->colormapSize1 = 0;
+        dev->colormapSize2 = 0;
+        dev->colormapSize = 0;
+        status = MP_BAD_ADDRESS;
+    }
+    if (status == MP_OK) {
+        MpReal bg = (dark ? 0 : 1);
+        MpReal fg = (dark ? 1 : 0);
+#define SET_STANDARD_COLOR(CI, R, G, B)                                 \
+        do {                                                            \
+            if (dev->colormapSize1 > MP_COLOR_##CI) {                   \
+                MpEncodeColor(&dev->colormap[MP_COLOR_##CI], R,G,B);    \
+            } else {                                                    \
+                status = MP_BAD_SIZE;                                   \
+            }                                                           \
+        } while (0)
+        SET_STANDARD_COLOR(BACKGROUND, bg, bg, bg);
+        SET_STANDARD_COLOR(FOREGROUND, fg, fg, fg);
+        SET_STANDARD_COLOR(RED,        1,  0,  0);
+        SET_STANDARD_COLOR(GREEN,      0,  1,  0);
+        SET_STANDARD_COLOR(BLUE,       0,  0,  1);
+        SET_STANDARD_COLOR(CYAN,       0,  1,  1);
+        SET_STANDARD_COLOR(MAGENTA,    1,  0,  1);
+        SET_STANDARD_COLOR(YELLOW,     1,  1,  0);
+        SET_STANDARD_COLOR(WHITE,      1,  1,  1);
+        SET_STANDARD_COLOR(BLACK,      1,  1,  1);
+#undef SET_STANDARD_COLOR
+    }
+    return status;
+}
+
+void
+MpEncodeColor(MpColor* dst, MpReal rd, MpReal gr, MpReal bl)
+{
+    // MpColor color = {.red = rd, .green = gr, .blue = bl};
+    dst->red   = rd;
+    dst->green = gr;
+    dst->blue  = bl;
+}
+
+MpStatus
+MpGetColormapSizes(MpDevice* dev, MpInt* n1, MpInt* n2)
+{
+    if (n1 != NULL) {
+        *n1 = (dev == NULL ? 0 : dev->colormapSize1);
+    }
+    if (n2 != NULL) {
+        *n2 = (dev == NULL ? 0 : dev->colormapSize2);
+    }
+    if (dev == NULL || n1 == NULL || n2 == NULL) {
+        return  MP_BAD_ADDRESS;
+    }
+    return MP_OK;
+}
+
+MpStatus
+MpSetColormapSizes(MpDevice* dev, MpInt n1, MpInt n2)
+{
+    if (dev == NULL) {
+        return  MP_BAD_ADDRESS;
+    }
+    if (n1 == dev->colormapSize1 && n2 == dev->colormapSize2) {
+         return MP_OK;
+    }
+    if (n1 < 2 || n2 < 0) {
+         return MP_BAD_SIZE;
+    }
+    return dev->setColormapSizes(dev, n1, n2);
 }

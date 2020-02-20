@@ -44,32 +44,107 @@ struct _MpDevice {
     MpLineStyle           lineStyle;
     MpReal                lineWidth;
     MpCoordinateTransform dataToNDC; /* data to NDC coordinate transform */
-    MpColorIndex      colormapSize0; /* Number of colors in the colormap 0 */
-    MpColorIndex      colormapSize1; /* Number of colors in the colormap 1 */
+    MpColorIndex      colormapSize1; /* Number of colors in the primary colormap */
+    MpColorIndex      colormapSize2; /* Number of colors in the secondary colormap */
     MpColorIndex       colormapSize; /* Total number of colors in color table */
     MpColor*               colormap; /* Colormap (freed automatically on close
                                         if non-NULL */
 
 
-    /* Methods can assume checked arguments. */
-    MpStatus (*close)(MpDevice* dev);
-    MpStatus (*select)(MpDevice* dev);
+    /* Methods can assume checked arguments.
+     *
+     * Note: These methods may assume that all arguments have been checked.
+     *
+     * - initialize() is called after the device has been open by the driver
+     *   and the device structure allocated (with its colormap).  This method
+     *   is the oportunity for the device to set initial settings (like the
+     *   colors, etc.).  This method is never called again.
+     */
+    MpStatus (*initialize)(MpDevice* dev);
+    /*
+     * - finalize() is called to close the device and free associated
+     *   ressources (resources in the public part of the device like the
+     *   colormap are however automacally destroyed if not yet done on return
+     *   of this method).  This method is never called again.
+     */
+    MpStatus (*finalize)(MpDevice* dev);
+    /*
+     * - setPageSize() is called to set the page size in millimeters.
+     */
     MpStatus (*setPageSize)(MpDevice* dev, MpReal w, MpReal h);
+    /*
+     * - setResolution() is called to set the horizontal and vertical
+     *   resolution is number of samples per millimeter.
+     */
     MpStatus (*setResolution)(MpDevice* dev, MpReal xpmm, MpReal ypmm);
+    /*
+     * - startBuffering() is called to start buffering graphical output.
+     *   Buffering may be useful to speed-up drawing operations or to make sure
+     *   that a graphic is complete before showing it.
+     */
     MpStatus (*startBuffering)(MpDevice* dev);
+    /*
+     * - stopBuffering() is called to stop buffering graphical output.
+     */
     MpStatus (*stopBuffering)(MpDevice* dev);
+    /*
+     * - beginPage() is called to begin a new page of graphics.
+     */
     MpStatus (*beginPage)(MpDevice* dev);
+    /*
+     * - endPage() is called to end the current page of graphics.
+     */
     MpStatus (*endPage)(MpDevice* dev);
+    /*
+     * - setColormapSizes() is called to set the number of colors in the
+     *   colormaps.
+     */
+    MpStatus (*setColormapSizes)(MpDevice* dev, MpInt n1, MpInt n2);
+    /*
+     * - setColorIndex() is called to set the current color index.
+     */
     MpStatus (*setColorIndex)(MpDevice* dev, MpColorIndex ci);
-    MpStatus (*setColor)(MpDevice* dev, MpColorIndex ci, MpReal rd, MpReal gr, MpReal bl);
+    /*
+     * - setColor() is called to define a given color.
+     */
+    MpStatus (*setColor)(MpDevice* dev, MpColorIndex ci,
+                         MpReal rd, MpReal gr, MpReal bl);
+    /*
+     * - setLineStyle() is called to set the current line style.
+     */
     MpStatus (*setLineStyle)(MpDevice* dev, MpLineStyle ls);
+    /*
+     * - setLineWidth() is called to set the current line width.
+     */
     MpStatus (*setLineWidth)(MpDevice* dev, MpReal lw);
+    /*
+     * - drawPoint() is called to draw a point using the current settings.
+     */
     MpStatus (*drawPoint)(MpDevice* dev, MpPoint x, MpPoint y);
-    MpStatus (*drawRectangle)(MpDevice* dev, MpPoint x0, MpPoint y0, MpPoint x1, MpPoint y1);
-    MpStatus (*drawPolyline)(MpDevice* dev, const MpPoint* x, const MpPoint* y, MpInt n);
-    MpStatus (*drawPolygon)(MpDevice* dev, const MpPoint* x, const MpPoint* y, MpInt n);
-    MpStatus (*drawCells)(MpDevice* dev, const MpColorIndex* z,
-                          MpInt n1, MpInt n2, MpInt stride,
+    /*
+     * - drawRectangle() is called to draw a (filled) rectangle using the
+     *   current settings.
+     */
+    MpStatus (*drawRectangle)(MpDevice* dev,
+                              MpPoint x0, MpPoint y0, MpPoint x1, MpPoint y1);
+    /*
+     * - drawPolyline() is called to draw an open polyline using the current
+     *   settings.
+     */
+    MpStatus (*drawPolyline)(MpDevice* dev,
+                             const MpPoint* x, const MpPoint* y, MpInt n);
+    /*
+     * - drawPolygon() is called to draw a closed polygon using the current
+     *   settings.
+     */
+    MpStatus (*drawPolygon)(MpDevice* dev,
+                            const MpPoint* x, const MpPoint* y, MpInt n);
+    /*
+     * - drawCells() is called to draw colored cells using the current
+     *   settings.
+     */
+    MpStatus (*drawCells)(MpDevice* dev,
+                          const MpColorIndex* z, MpInt n1, MpInt n2, MpInt stride,
                           MpPoint x0, MpPoint y0, MpPoint x1, MpPoint y1);
 };
 
