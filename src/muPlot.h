@@ -26,6 +26,47 @@
 #  define _MP_END_DECLS
 #endif
 
+/**
+ * @def MP_IS_SINGLE_PRECISION(T)
+ *
+ * Check whether floating-point type `T` is single precision.  The macro must be
+ * evaluated by the compiler (i.e. not the preprocessor), the result is
+ * constant so it will probably be eliminated by the optimizer.
+ */
+#define MP_IS_SINGLE_PRECISION(T) (sizeof(T) <= sizeof(float))
+
+/**
+ * @def MP_IS_FINITE(x)
+ *
+ * Macro to check whether `x` is finite.  Argument is evaluated twice, it is
+ * better if it is a variable, not an expression.
+ */
+#define MP_IS_FINITE(x)  (((x) - (x)) == 0)
+
+/**
+ * @def MP_IS_NAN(x)
+ *
+ * Macro to check whether `x` is a NaN (not-a-number).  Argument is evaluated
+ * twice, it is better if it is a variable, not an expression.
+ */
+#define MP_IS_NAN(x)   ((x) != (x))
+
+/**
+ * @def MP_NEW(T)
+ *
+ * Allocate a memory for an object of type `T`.  The returned memory is
+ * zero-filled.
+ */
+#define MP_NEW(T)   ((T*)calloc(1, sizeof(T)))
+
+/**
+ * @def MP_OFFSET_OF(T)
+ *
+ * This macro yields the offset (in bytes) of member `M` in a structure of type
+ * `T`.
+ */
+#define MP_OFFSET_OF(T, M)  (((char*)&(((T*)0)->M)) - ((char*)0))
+
 _MP_BEGIN_DECLS
 
 typedef float   MpReal;
@@ -33,11 +74,6 @@ typedef long    MpInt;
 typedef int     MpBool; /* FIXME: see bool.h */
 typedef MpInt   MpColorIndex;
 typedef int16_t MpPoint; /* for device coordinates, sufficient for giga-pixel images */
-
-/* The following macro must be evaluated by the compiler (i.e. not the
-   preprocessor), the result is constant so it will probably be eliminated by
-   the optimizer. */
-#define MP_SINGLE_PRECISION (sizeof(MpReal) <= sizeof(float))
 
 typedef enum {
     MP_SOLID_LINE              =  0,
@@ -133,13 +169,13 @@ extern MpDevice* MpAllocateDevice(size_t size);
  * of eventually calling MpCloseDevice() to close the graphic device and free
  * all associated ressources.
  *
- * @param dev       The address to store the new device structure.
+ * @param devptr    The address to store the new device structure.
  * @param ident     The identifier of the graphic device.
  * @param arg       Supplied argument like the filename.
  *
  * @return A standard status: `MP_OK` on success, an error code on failure.
  */
-extern MpStatus MpOpenDevice(MpDevice** dev, const char* ident, const char* arg);
+extern MpStatus MpOpenDevice(MpDevice** devptr, const char* ident, const char* arg);
 
 /**
  * Close graphic device.
@@ -147,11 +183,11 @@ extern MpStatus MpOpenDevice(MpDevice** dev, const char* ident, const char* arg)
  * Call this routine to close a graphic device.  This releases all associated
  * ressources.  As a consequence, the device can no longer be used.
  *
- * @param dev     The graphic device.
+ * @param devptr    The graphic device.
  *
  * @return A standard status: `MP_OK` on success, an error code on failure.
  */
-extern MpStatus MpCloseDevice(MpDevice* dev);
+extern MpStatus MpCloseDevice(MpDevice** devptr);
 
 /**
  * Set page size.
