@@ -46,7 +46,9 @@ struct _MpDevice {
     MpCoordinateTransform dataToNDC; /* data to NDC coordinate transform */
     MpColorIndex      colormapSize0; /* Number of colors in the colormap 0 */
     MpColorIndex      colormapSize1; /* Number of colors in the colormap 1 */
-    MpColorIndex       colormapSize; /* Total number of colors */
+    MpColorIndex       colormapSize; /* Total number of colors in color table */
+    MpColor*               colormap; /* Colormap (freed automatically on close
+                                        if non-NULL */
 
 
     /* Methods can assume checked arguments. */

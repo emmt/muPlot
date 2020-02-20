@@ -27,13 +27,6 @@
 #define MP_FLIP_X   (1 << 0)
 #define MP_FLIP_Y   (1 << 1)
 
-typedef struct _MpColor MpColor;
-struct _MpColor {
-    MpReal red;
-    MpReal green;
-    MpReal blue;
-};
-
 typedef enum {
     XFIG_COLOR_OBJECT_TYPE    = 0,
     XFIG_ELLIPSE_OBJECT_TYPE  = 1,

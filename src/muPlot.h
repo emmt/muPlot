@@ -75,6 +75,18 @@ typedef int     MpBool; /* FIXME: see bool.h */
 typedef MpInt   MpColorIndex;
 typedef int16_t MpPoint; /* for device coordinates, sufficient for giga-pixel images */
 
+/*
+ * Structure to store an (R,G,B) color representation.  Colorant values are in
+ * the range [0,1].  0 means dark, 1 means bright.  Values outside this range
+ * are clippled to [0,1].
+ */
+typedef struct _MpColor MpColor;
+struct _MpColor {
+    MpReal red;
+    MpReal green;
+    MpReal blue;
+};
+
 typedef enum {
     MP_SOLID_LINE              =  0,
     MP_DASHED_LINE             =  1,

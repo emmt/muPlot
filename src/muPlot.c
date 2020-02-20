@@ -279,11 +279,9 @@ static MpStatus
 defaultSetColor(MpDevice* dev, MpColorIndex ci, MpReal rd, MpReal gr, MpReal bl)
 {
     /* Note: Arguments have bee checked. */
-#if 0
-    dev->colors[ci].red   = rd;
-    dev->colors[ci].green = gr;
-    dev->colors[ci].blue  = bl;
-#endif
+    dev->colormap[ci].red   = rd;
+    dev->colormap[ci].green = gr;
+    dev->colormap[ci].blue  = bl;
     return MP_OK;
 }
 
@@ -362,7 +360,22 @@ MpCheckColors(MpDevice* dev)
         dev->colormapSize != dev->colormapSize0 + dev->colormapSize1) {
         return MP_BAD_SETTINGS;
     }
-    return MP_OK;
+    if (dev->colormap == NULL) {
+        dev->colormap = (MpColor*)calloc(dev->colormapSize, sizeof(MpColor));
+        if (dev->colormap == NULL) {
+            return MP_NO_MEMORY;
+        }
+    }
+    MpStatus status = MP_OK;
+#if 0 // FIXME: provide means to initially set colors and color index
+    for (MpColorIndex ci = 0; status == MP_OK && ci < dev->colormapSize; ++ci) {
+        status = dev->setColor(dev, ci,
+                               &dev->colormap[ci].red,
+                               &dev->colormap[ci].green,
+                               &dev->colormap[ci].blue);
+    }
+#endif
+    return status;
 }
 
 MpStatus
@@ -406,20 +419,32 @@ MpOpenDevice(MpDevice** devptr, const char* ident, const char* arg)
     return status;
 }
 
+static MpStatus
+finalizeDevice(MpDevice* dev)
+{
+    MpStatus status = MP_OK;
+    if (dev != NULL) {
+        /* Device not yet closed. */
+        status = dev->close(dev);
+        if (dev->colormap != NULL) {
+            free((void*)dev->colormap);
+            dev->colormap = NULL;
+            dev->colormapSize = 0;
+        }
+        free((void*)dev);
+    }
+    return status;
+}
+
 MpStatus
 MpCloseDevice(MpDevice** devptr)
 {
     if (devptr == NULL) {
         return MP_BAD_ADDRESS;
     }
-    if (*devptr != NULL) {
-        /* Device not yet closed. */
-        MpStatus status = (*devptr)->close(*devptr);
-        free((void*)(*devptr));
-        *devptr = NULL;
-        return status;
-    }
-    return MP_OK;
+    MpStatus status = finalizeDevice(*devptr);
+    *devptr = NULL;
+    return status;
 }
 
 MpStatus
@@ -596,13 +621,11 @@ MpSetColor(MpDevice* dev, MpColorIndex ci, MpReal rd, MpReal gr, MpReal bl)
     CLAMP_COLORANT(rd, badValue);
     CLAMP_COLORANT(gr, badValue);
     CLAMP_COLORANT(bl, badValue);
-#if 0
-    if (dev->colors[ci].red   == rd &&
-        dev->colors[ci].green == gr &&
-        dev->colors[ci].blue  == bl) {
+    if (dev->colormap[ci].red   == rd &&
+        dev->colormap[ci].green == gr &&
+        dev->colormap[ci].blue  == bl) {
         return MP_OK;
     }
-#endif
     return dev->setColor(dev, ci, rd, gr, bl);
 
  badValue:
@@ -619,13 +642,10 @@ MpGetColor(MpDevice* dev, MpColorIndex ci,
     if (ci < 0 || ci >= dev->colormapSize) {
         return MP_OUT_OF_RANGE;
     }
-#if 0
-    *rd = dev->colors[ci].red;
-    *gr = dev->colors[ci].green;
-    *bl = dev->colors[ci].blue;
-#endif
+    *rd = dev->colormap[ci].red;
+    *gr = dev->colormap[ci].green;
+    *bl = dev->colormap[ci].blue;
     return MP_OK;
-
 }
 
 MpStatus
