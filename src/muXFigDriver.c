@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <math.h>
-#include "muPlot.h"
+#include "muPlotPriv.h"
 
 #define true (!0)
 #define false (!true)
@@ -230,7 +230,7 @@ colorant(MpReal val)
 {
     return (val <= (MpReal)0 ? (unsigned)0 :
             (val >= (MpReal)255 ? (unsigned)255 :
-             (MP_SINGLE_PRECISION ?
+             (MP_IS_SINGLE_PRECISION(val) ?
               (unsigned)roundf((float)val*(float)255) :
               (unsigned)round((double)val*(double)255))));
 }
@@ -396,13 +396,14 @@ MpOpenXFigDevice(MpDevice** devptr, const char* ident, const char* arg)
     }
     dev->select = selectXFigDevice;
     dev->setColorIndex = setXFigColorIndex;
-    dev->getColorIndex = getXFigColorIndex;
     dev->setColor = setXFigColor;
-    dev->getColor = getXFigColor;
     dev->drawPoint = drawXFigPoint;
     dev->drawRectangle = drawXFigRectangle;
     dev->drawPolyline = drawXFigPolyline;
     dev->drawPolygon = drawXFigPolygon;
+    dev->colormapSize0 = (XFIG_C0MAX + 1 - XFIG_C0MIN);
+    dev->colormapSize1 = (XFIG_C1MAX + 1 - XFIG_C1MIN);
+    // FIXME: dev->colormapSize = dev->colormapSize0 + dev->colormapSize1;
 
     XFigDevice* xfig = (XFigDevice*)dev;
     xfig->file = fopen(arg, "w");

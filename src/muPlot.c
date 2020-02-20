@@ -16,12 +16,7 @@
 #include <math.h>
 #include <errno.h>
 
-#include "muPlot.h"
-
-typedef unsigned char byte;
-
-#define MP_NEW(T)           ((T*)calloc(1, sizeof(T)))
-#define MP_OFFSET_OF(T, M)  (((byte*)&(((T*)0)->M)) - ((byte*)0))
+#include "muPlotPriv.h"
 
 typedef struct _MpDriver MpDriver;
 struct _MpDriver {
@@ -29,24 +24,6 @@ struct _MpDriver {
     MpDriver* next;
     const char ident[1]; /* Driver identifier. */
 };
-
-MpBool
-MpIsFinite(MpReal val)
-{
-    /* The optimizer will get rid of this ugliness... */
-    return (MP_SINGLE_PRECISION ?
-            (isinff((float)val) | isnanf((float)val)) :
-            (isinf((double)val) | isnan((double)val))) == 0;
-}
-
-static MpBool
-notfinite(MpReal val)
-{
-    /* The optimizer will get rid of this ugliness... */
-    return (MP_SINGLE_PRECISION ?
-            (isinff((float)val) | isnanf((float)val)) :
-            (isinf((double)val) | isnan((double)val))) != 0;
-}
 
 MpStatus
 MpSystemError()
@@ -230,23 +207,23 @@ MpCheckPageSettings(MpDevice* dev)
        may be negative to indicate reverse orientation).  Pager size and/or
        number of samples may have been set or left to their uninitialized
        value (that is zero). */
-    if (! MpIsFinite(dev->horizontalResolution) ||
-        ! MpIsFinite(dev->verticalResolution) ||
-        ! MpIsFinite(dev->pageWidth) || dev->pageWidth < 0 ||
-        ! MpIsFinite(dev->pageHeight) || dev->pageHeight < 0) {
+    if (! MP_IS_FINITE(dev->horizontalResolution) ||
+        ! MP_IS_FINITE(dev->verticalResolution) ||
+        ! MP_IS_FINITE(dev->pageWidth) || dev->pageWidth < 0 ||
+        ! MP_IS_FINITE(dev->pageHeight) || dev->pageHeight < 0) {
         return MP_BAD_SETTINGS;
     }
 
     /* Attempt to fix page size. */
     if (dev->pageWidth == 0 && dev->horizontalSamples > 0) {
         dev->pageWidth = dev->horizontalSamples/fabs(dev->horizontalResolution);
-        if (! MpIsFinite(dev->pageWidth)) {
+        if (! MP_IS_FINITE(dev->pageWidth)) {
             return MP_BAD_SETTINGS;
         }
     }
     if (dev->pageHeight == 0 && dev->verticalSamples > 0) {
         dev->pageHeight = dev->verticalSamples/fabs(dev->verticalResolution);
-        if (! MpIsFinite(dev->pageHeight)) {
+        if (! MP_IS_FINITE(dev->pageHeight)) {
             return MP_BAD_SETTINGS;
         }
     }
@@ -290,6 +267,42 @@ cannotSetResolution(MpDevice* dev, MpReal xpmm, MpReal ypmm)
     return MP_NOT_PERMITTED;
 }
 
+static MpStatus
+defaultSetColorIndex(MpDevice* dev, MpColorIndex ci)
+{
+    /* Note: Arguments have bee checked. */
+    dev->colorIndex = ci;
+    return MP_OK;
+}
+
+static MpStatus
+defaultSetColor(MpDevice* dev, MpColorIndex ci, MpReal rd, MpReal gr, MpReal bl)
+{
+    /* Note: Arguments have bee checked. */
+#if 0
+    dev->colors[ci].red   = rd;
+    dev->colors[ci].green = gr;
+    dev->colors[ci].blue  = bl;
+#endif
+    return MP_OK;
+}
+
+static MpStatus
+defaultSetLineStyle(MpDevice* dev, MpLineStyle ls)
+{
+    /* Note: Arguments have bee checked. */
+    dev->lineStyle = ls;
+    return MP_OK;
+}
+
+static MpStatus
+defaultSetLineWidth(MpDevice* dev, MpReal lw)
+{
+    /* Note: Arguments have bee checked. */
+    dev->lineWidth = lw;
+    return MP_OK;
+}
+
 MpStatus
 MpCheckMethods(MpDevice* dev)
 {
@@ -308,6 +321,10 @@ MpCheckMethods(MpDevice* dev)
     SUBSTITUTE_METHOD(dev->stopBuffering,  doNothing);
     SUBSTITUTE_METHOD(dev->beginPage,      doNothing);
     SUBSTITUTE_METHOD(dev->endPage,        doNothing);
+    SUBSTITUTE_METHOD(dev->setColorIndex,  defaultSetColorIndex);
+    SUBSTITUTE_METHOD(dev->setColor,       defaultSetColor);
+    SUBSTITUTE_METHOD(dev->setLineWidth,   defaultSetLineWidth);
+    SUBSTITUTE_METHOD(dev->setLineStyle,   defaultSetLineStyle);
     SUBSTITUTE_METHOD(dev->drawCells,      MpDrawCellsHelper);
 #undef SUBSTITUTE_METHOD
 
@@ -321,11 +338,9 @@ MpCheckMethods(MpDevice* dev)
         dev->beginPage      == NULL ||
         dev->endPage        == NULL ||
         dev->setColorIndex  == NULL ||
-        dev->getColorIndex  == NULL ||
         dev->setColor       == NULL ||
-        dev->getColor       == NULL ||
+        dev->setLineStyle   == NULL ||
         dev->setLineWidth   == NULL ||
-        dev->getLineWidth   == NULL ||
         dev->drawPoint      == NULL ||
         dev->drawRectangle  == NULL ||
         dev->drawPolyline   == NULL ||
@@ -337,9 +352,23 @@ MpCheckMethods(MpDevice* dev)
 }
 
 MpStatus
+MpCheckColors(MpDevice* dev)
+{
+    /* First attempt to fix total number of colors. */
+    if (dev->colormapSize == 0) {
+        dev->colormapSize = dev->colormapSize0 + dev->colormapSize1;
+    }
+    if (dev->colormapSize0 < 2 || dev->colormapSize1 < 0 ||
+        dev->colormapSize != dev->colormapSize0 + dev->colormapSize1) {
+        return MP_BAD_SETTINGS;
+    }
+    return MP_OK;
+}
+
+MpStatus
 MpOpenDevice(MpDevice** devptr, const char* ident, const char* arg)
 {
-    /* Check arguments and set `dev` to `NULL` in case of errors. */
+    /* Check arguments and set `*devptr` to `NULL` in case of errors. */
     if (devptr == NULL) {
         return MP_BAD_ADDRESS;
     }
@@ -358,32 +387,39 @@ MpOpenDevice(MpDevice** devptr, const char* ident, const char* arg)
     }
     if (status == MP_OK) {
         /* Fix/check settings. */
-        MpDevice* dev = *devptr;
-        if (dev == NULL) {
+        if (*devptr == NULL) {
             status = MP_BAD_ADDRESS;
         }
         if (status == MP_OK) {
-            status = MpCheckPageSettings(dev);
+            status = MpCheckPageSettings(*devptr);
         }
         if (status == MP_OK) {
-            status = MpCheckMethods(dev);
+            status = MpCheckMethods(*devptr);
         }
-        if (status != MP_OK && dev != NULL) {
-            MpCloseDevice(dev);
+        if (status == MP_OK) {
+            status = MpCheckColors(*devptr);
+        }
+        if (status != MP_OK) {
+            MpCloseDevice(devptr);
         }
     }
     return status;
 }
 
 MpStatus
-MpCloseDevice(MpDevice* dev)
+MpCloseDevice(MpDevice** devptr)
 {
-    if (dev == NULL) {
+    if (devptr == NULL) {
         return MP_BAD_ADDRESS;
     }
-    MpStatus status = dev->close(dev);
-    free((void*)dev);
-    return status;
+    if (*devptr != NULL) {
+        /* Device not yet closed. */
+        MpStatus status = (*devptr)->close(*devptr);
+        free((void*)(*devptr));
+        *devptr = NULL;
+        return status;
+    }
+    return MP_OK;
 }
 
 MpStatus
@@ -394,6 +430,9 @@ MpSetPageSize(MpDevice* dev, MpReal width, MpReal height)
     }
     if (width < 1 || height < 1) {
         return MP_BAD_ARGUMENT;
+    }
+    if (width == dev->pageWidth && height == dev->pageHeight) {
+        return MP_OK;
     }
     return dev->setPageSize(dev, width, height);
 }
@@ -415,8 +454,11 @@ MpSetResolution(MpDevice* dev, MpReal xpmm, MpReal ypmm)
     if (dev == NULL) {
         return MP_BAD_ADDRESS;
     }
-    if (notfinite(xpmm) || xpmm <= 0 || notfinite(ypmm) || ypmm <= 0) {
+    if (! MP_IS_FINITE(xpmm) || xpmm <= 0 || ! MP_IS_FINITE(ypmm) || ypmm <= 0) {
         return MP_BAD_ARGUMENT;
+    }
+    if (xpmm == dev->horizontalResolution && ypmm == dev->verticalResolution) {
+        return MP_OK;
     }
     return dev->setResolution(dev, xpmm, ypmm);
 }
@@ -463,7 +505,7 @@ MpDrawCellsHelper(MpDevice* dev, const MpColorIndex* z,
     }
 
     /* Save initial color index. */
-    status = dev->getColorIndex(dev, &ci0);
+    status = MpGetColorIndex(dev, &ci0);
     if (status != MP_OK) {
         return status;
     }
@@ -497,5 +539,143 @@ MpDrawCellsHelper(MpDevice* dev, const MpColorIndex* z,
     }
 
     /* Restore initial color index. */
-    return dev->setColorIndex(dev, ci0);
+    return MpSetColorIndex(dev, ci0);
+}
+
+MpStatus
+MpSetColorIndex(MpDevice* dev, MpColorIndex ci)
+{
+    if (dev == NULL) {
+        return MP_BAD_ADDRESS;
+    }
+    if (ci == dev->colorIndex) {
+        return MP_OK;
+    }
+    if (ci < 0 || ci >= dev->colormapSize) {
+        return MP_OUT_OF_RANGE;
+    }
+    return dev->setColorIndex(dev, ci); // FXIME: check that dev->colorIndex = ci
+}
+
+MpStatus
+MpGetColorIndex(MpDevice* dev, MpColorIndex* ci)
+{
+    if (dev == NULL || ci == NULL) {
+        return MP_BAD_ADDRESS;
+    }
+    *ci = dev->colorIndex;
+    return MP_OK;
+}
+
+/*
+ * The following macro clamp a colorant value to the range [0,1].  Argument
+ * `lval` is an L-value.  Argument `label` is the label to go to if `lval` is
+ * not-a-number.
+ */
+#define CLAMP_COLORANT(lval, label)             \
+    do {                                        \
+        if (MP_IS_NAN(lval)) {                  \
+            goto label;                         \
+        }                                       \
+        if (lval < 0) {                         \
+            lval = 0;                           \
+        }  else if (lval > 1) {                 \
+            lval = 1;                           \
+        }                                       \
+    } while (0)
+
+MpStatus
+MpSetColor(MpDevice* dev, MpColorIndex ci, MpReal rd, MpReal gr, MpReal bl)
+{
+    if (dev == NULL) {
+        return MP_BAD_ADDRESS;
+    }
+    if (ci < 0 || ci >= dev->colormapSize) {
+        return MP_OUT_OF_RANGE;
+    }
+    CLAMP_COLORANT(rd, badValue);
+    CLAMP_COLORANT(gr, badValue);
+    CLAMP_COLORANT(bl, badValue);
+#if 0
+    if (dev->colors[ci].red   == rd &&
+        dev->colors[ci].green == gr &&
+        dev->colors[ci].blue  == bl) {
+        return MP_OK;
+    }
+#endif
+    return dev->setColor(dev, ci, rd, gr, bl);
+
+ badValue:
+    return MP_BAD_SETTINGS;
+}
+
+MpStatus
+MpGetColor(MpDevice* dev, MpColorIndex ci,
+           MpReal* rd, MpReal* gr, MpReal* bl)
+{
+    if (dev == NULL || rd == NULL || gr == NULL || bl == NULL) {
+        return MP_BAD_ADDRESS;
+    }
+    if (ci < 0 || ci >= dev->colormapSize) {
+        return MP_OUT_OF_RANGE;
+    }
+#if 0
+    *rd = dev->colors[ci].red;
+    *gr = dev->colors[ci].green;
+    *bl = dev->colors[ci].blue;
+#endif
+    return MP_OK;
+
+}
+
+MpStatus
+MpSetLineStyle(MpDevice* dev, MpLineStyle ls)
+{
+    if (dev == NULL) {
+        return MP_BAD_ADDRESS;
+    }
+    if (ls == dev->lineStyle) {
+        return MP_OK;
+    }
+    if (ls < 0 || ls > MP_DASH_TRIPLE_DOTTED_LINE) {
+        return MP_OUT_OF_RANGE;
+    }
+    return dev->setLineStyle(dev, ls);
+}
+
+MpStatus
+MpGetLineStyle(MpDevice* dev, MpLineStyle* ls)
+{
+    if (dev == NULL || ls == NULL) {
+        return MP_BAD_ADDRESS;
+    }
+    *ls = dev->lineStyle;
+    return MP_OK;
+}
+
+#define MAX_LINE_WIDTH 100 // FIXME:
+
+MpStatus
+MpSetLineWidth(MpDevice* dev, MpReal lw)
+{
+    if (dev == NULL) {
+        return MP_BAD_ADDRESS;
+    }
+    if (lw == dev->lineWidth) {
+        return MP_OK;
+    }
+    if (MP_IS_NAN(lw) || lw < 0 || lw > MAX_LINE_WIDTH) {
+        return MP_BAD_SETTINGS;
+    }
+    return dev->setLineWidth(dev, lw);
+}
+
+MpStatus
+MpGetLineWidth(MpDevice* dev, MpReal* lw)
+{
+    if (dev == NULL || lw == NULL) {
+        return MP_BAD_ADDRESS;
+    }
+    *lw = dev->lineWidth;
+    return MP_OK;
 }

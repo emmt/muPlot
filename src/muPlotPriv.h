@@ -59,11 +59,9 @@ struct _MpDevice {
     MpStatus (*beginPage)(MpDevice* dev);
     MpStatus (*endPage)(MpDevice* dev);
     MpStatus (*setColorIndex)(MpDevice* dev, MpColorIndex ci);
-    MpStatus (*getColorIndex)(MpDevice* dev, MpColorIndex* ci);
     MpStatus (*setColor)(MpDevice* dev, MpColorIndex ci, MpReal rd, MpReal gr, MpReal bl);
-    MpStatus (*getColor)(MpDevice* dev, MpColorIndex ci, MpReal* rd, MpReal* gr, MpReal* bl);
+    MpStatus (*setLineStyle)(MpDevice* dev, MpLineStyle ls);
     MpStatus (*setLineWidth)(MpDevice* dev, MpReal lw);
-    MpStatus (*getLineWidth)(MpDevice* dev, MpReal* lw);
     MpStatus (*drawPoint)(MpDevice* dev, MpPoint x, MpPoint y);
     MpStatus (*drawRectangle)(MpDevice* dev, MpPoint x0, MpPoint y0, MpPoint x1, MpPoint y1);
     MpStatus (*drawPolyline)(MpDevice* dev, const MpPoint* x, const MpPoint* y, MpInt n);
