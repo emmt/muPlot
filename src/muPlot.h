@@ -261,6 +261,20 @@ extern MpStatus MpDrawCellsHelper(MpDevice* dev, const MpColorIndex* z,
                                   MpInt n1, MpInt n2, MpInt stride,
                                   MpPoint x0, MpPoint y0, MpPoint x1, MpPoint y1);
 
+extern MpStatus MpSetColorIndex(MpDevice* dev, MpColorIndex ci);
+extern MpStatus MpGetColorIndex(MpDevice* dev, MpColorIndex* ci);
+
+extern MpStatus MpSetColor(MpDevice* dev, MpColorIndex ci,
+                           MpReal rd, MpReal gr, MpReal bl);
+extern MpStatus MpGetColor(MpDevice* dev, MpColorIndex ci,
+                           MpReal* rd, MpReal* gr, MpReal* bl);
+
+extern MpStatus MpSetLineStyle(MpDevice* dev, MpLineStyle ls);
+extern MpStatus MpGetLineStyle(MpDevice* dev, MpLineStyle* ls);
+
+extern MpStatus MpSetLineWidth(MpDevice* dev, MpReal lw);
+extern MpStatus MpGetLineWidth(MpDevice* dev, MpReal* lw);
+
 _MP_END_DECLS
 
 #endif /* _MUPLOT_H_ */
