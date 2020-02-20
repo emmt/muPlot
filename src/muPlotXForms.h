@@ -104,7 +104,7 @@ _MP_BEGIN_DECLS
  * - Call MpInterceptAffineTransformFlt() or MpInterceptAffineTransformFlt() to
  *   compute the intercept of an affine transform.
  */
-typedef struct  {
+typedef struct _MpAffineTransformFlt {
     float xx, xy, x;
     float yx, yy, y;
 } MpAffineTransformFlt;
@@ -115,7 +115,7 @@ typedef struct  {
  * The structure `MpAffineTransformDbl` is the same as @ref MpAffineTransformFlt
  * but with double precision floating-point coefficients.
  */
-typedef struct  {
+typedef struct _MpAffineTransformDbl {
     double xx, xy, x;
     double yx, yy, y;
 } MpAffineTransformDbl;
