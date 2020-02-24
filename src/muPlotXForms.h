@@ -39,7 +39,7 @@ _MP_BEGIN_DECLS
  * </pre>
  *
  * where `E` is a macro such that `E(A,m)` yields the member `m` of
- * `A`. Usually, `E` is `MP_GET_FIELD_DOT` or `MP_GET_FIELD_ARROW`.
+ * `A`. Usually, `E` is `MP_GET_FIELD` or `MP_GET_FIELD_PTR`.
  *
  * The simple layout of the coefficients make possible the casting an array of
  * 6 floating-point values as a pointer to an affine transform (and
@@ -122,18 +122,10 @@ typedef struct _MpAffineTransformDbl {
 
 
 /*
- * These following macros yield (as an L-value) the member `M` of a structured
- * object `A`.  For `MP_GET_FIELD_DOT`, `A` is a structured object; whereas for
- * `MP_GET_FIELD_ARROW`, `A` is a pointer to a structured object
- */
-#define MP_GET_FIELD_DOT(A,M)      ((A).M)
-#define MP_GET_FIELD_ARROW(A,M)    ((A)->M)
-
-/*
  * The following macros yield the abscissa `X` or the ordinate `Y` resulting
  * from applying an affine transform `A` to coordinates `(X,Y)`. Argument `E`
  * is a macro such that `E(A,M)` yields the member `M` of `A`.  Usually, `E` is
- * `MP_GET_FIELD_DOT` or `MP_GET_FIELD_ARROW`.
+ * `MP_GET_FIELD` or `MP_GET_FIELD_PTR`.
  */
 #define MP_XFORM_APPLY_X(E,A,X,Y)  (E(A,xx)*(X) + E(A,xy)*(Y) + E(A,x))
 #define MP_XFORM_APPLY_Y(E,A,X,Y)  (E(A,yx)*(X) + E(A,yy)*(Y) + E(A,y))
@@ -207,7 +199,7 @@ MpComposeAffineTransformsAltDbl(MpAffineTransformDbl A,
  * The following macros yield the components of the composition `A⋅B` of affine
  * transforms `A` and `B`.  Argument `E` is a macro such that `E(A,M)` and
  * `E(B,M)` yield the member `M` of `A` and `B`.  Usually, `E` is
- * `MP_GET_FIELD_DOT` or `MP_GET_FIELD_ARROW`.
+ * `MP_GET_FIELD` or `MP_GET_FIELD_PTR`.
  */
 #define MP_XFORM_COMPOSE_XX(E,A,B)  (E(A,xx)*E(B,xx) + E(A,xy)*E(B,yx)        )
 #define MP_XFORM_COMPOSE_XY(E,A,B)  (E(A,xx)*E(B,xy) + E(A,xy)*E(B,yy)        )
@@ -477,7 +469,7 @@ extern double MpDeterminantAffineTransformDblt(const MpAffineTransformFlt* A);
 /*
  * The following macro yields the determinant of the linear part of the affine
  * transform `A`.  Argument `E` is a macro such that `E(A,M)` yields the member
- * `M` of `A`.  Usually, `E` is `MP_GET_FIELD_DOT` or `MP_GET_FIELD_ARROW`.
+ * `M` of `A`.  Usually, `E` is `MP_GET_FIELD` or `MP_GET_FIELD_PTR`.
  */
 #define MP_XFORM_DETERMINANT(E,A) (E(A,xx)*E(A,yy) - E(A,xy)*E(A,yx))
 
@@ -497,7 +489,7 @@ MpInverseAffineTransformDbl(MpAffineTransformDbl* dst,
  * the affine transform `A`.  Argument `T` is the floating-point type of the
  * coefficients and argument `E` is a macro such that `E(A,M)` yields the
  * member `M` of `A` (and similarly for `DST`).  Usually, `E` is
- * `MP_GET_FIELD_DOT` or `MP_GET_FIELD_ARROW`.
+ * `MP_GET_FIELD` or `MP_GET_FIELD_PTR`.
  */
 #define MP_XFORM_INVERSE(T,E,DST,A)                     \
     do {                                                \
@@ -588,8 +580,8 @@ MpRightDivideAffineTransformsDbl(MpAffineTransformDbl* dst,
  * left division of the affine transform `B` by the affine transform `A`.
  * Argument `T` is the floating-point type of the coefficients and argument `E`
  * is a macro such that `E(A,M)` yields the member `M` of `A` (and similarly
- * for `DST` and `B`).  Usually, `E` is `MP_GET_FIELD_DOT` or
- * `MP_GET_FIELD_ARROW`.
+ * for `DST` and `B`).  Usually, `E` is `MP_GET_FIELD` or
+ * `MP_GET_FIELD_PTR`.
  */
 #define MP_XFORM_LEFT_DIVIDE(T,E,DST,A,B)               \
     do {                                                \
@@ -617,8 +609,8 @@ MpRightDivideAffineTransformsDbl(MpAffineTransformDbl* dst,
  * right division of the affine transform `A` by the affine transform `B`.
  * Argument `T` is the floating-point type of the coefficients and argument `E`
  * is a macro such that `E(A,M)` yields the member `M` of `A` (and similarly
- * for `DST` and `B`).  Usually, `E` is `MP_GET_FIELD_DOT` or
- * `MP_GET_FIELD_ARROW`.
+ * for `DST` and `B`).  Usually, `E` is `MP_GET_FIELD` or
+ * `MP_GET_FIELD_PTR`.
  */
 #define MP_XFORM_RIGHT_DIVIDE(T,E,DST,A,B)                      \
     do {                                                        \
@@ -674,7 +666,7 @@ MpInterceptAffineTransformDbl(double* xptr, double* yptr,
  * The following macro is to compute `(X,Y)` such that `A⋅(X,Y) = (0,0)`.
  * Argument `T` is the floating-point type of the coefficients and argument `E`
  * is a macro such that `E(A,M)` yields the member `M` of `A`.  Usually, `E` is
- * `MP_GET_FIELD_DOT` or `MP_GET_FIELD_ARROW`.
+ * `MP_GET_FIELD` or `MP_GET_FIELD_PTR`.
  */
 #define MP_XFORM_INTERCEPT(T,E,X,Y,A)                   \
     do {                                                \

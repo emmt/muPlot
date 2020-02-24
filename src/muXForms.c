@@ -24,7 +24,7 @@
                                       MpAffineTransform##SFX B)         \
     {                                                                   \
         MpAffineTransform##SFX dst;                                     \
-        MP_XFORM_COMPOSE(MP_GET_FIELD_DOT, dst, A, B);                  \
+        MP_XFORM_COMPOSE(MP_GET_FIELD, dst, A, B);                      \
         return dst;                                                     \
     }                                                                   \
                                                                         \
@@ -33,7 +33,7 @@
                                    const MpAffineTransform##SFX* A,     \
                                    const MpAffineTransform##SFX* B)     \
     {                                                                   \
-        MP_XFORM_COMPOSE(MP_GET_FIELD_ARROW, dst, A, B);                \
+        MP_XFORM_COMPOSE(MP_GET_FIELD_PTR, dst, A, B);                  \
         return MP_OK;                                                   \
     }
 
@@ -52,7 +52,7 @@ ENCODE(double, Dbl)
                                     T alpha,                            \
                                     const MpAffineTransform##SFX* A)    \
     {                                                                   \
-        MP_XFORM_LEFT_SCALE(MP_GET_FIELD_ARROW, dst, alpha, A);         \
+        MP_XFORM_LEFT_SCALE(MP_GET_FIELD_PTR, dst, alpha, A);           \
         return MP_OK;                                                   \
     }                                                                   \
                                                                         \
@@ -61,7 +61,7 @@ ENCODE(double, Dbl)
                                      const MpAffineTransform##SFX* A,   \
                                      T alpha)                           \
     {                                                                   \
-        MP_XFORM_RIGHT_SCALE(MP_GET_FIELD_ARROW, dst, A, alpha);        \
+        MP_XFORM_RIGHT_SCALE(MP_GET_FIELD_PTR, dst, A, alpha);          \
         return MP_OK;                                                   \
     }
 
@@ -79,7 +79,7 @@ ENCODE(double,Dbl)
                                         T x, T y,                         \
                                         const MpAffineTransform##SFX* A)  \
     {                                                                     \
-        MP_XFORM_LEFT_TRANSLATE(MP_GET_FIELD_ARROW, dst, x, y, A);        \
+        MP_XFORM_LEFT_TRANSLATE(MP_GET_FIELD_PTR, dst, x, y, A);          \
         return MP_OK;                                                     \
     }                                                                     \
                                                                           \
@@ -88,7 +88,7 @@ ENCODE(double,Dbl)
                                          const MpAffineTransform##SFX* A, \
                                          T x, T y)                        \
     {                                                                     \
-        MP_XFORM_LEFT_TRANSLATE(MP_GET_FIELD_ARROW, dst, x, y, A);        \
+        MP_XFORM_LEFT_TRANSLATE(MP_GET_FIELD_PTR, dst, x, y, A);          \
         return MP_OK;                                                     \
     }
 
@@ -109,7 +109,7 @@ ENCODE(double, Dbl)
     {                                                                   \
         T sn = SIN(theta);                                              \
         T cs = COS(theta);                                              \
-        MP_XFORM_LEFT_ROTATE(MP_GET_FIELD_ARROW, dst, sn, cs, A);       \
+        MP_XFORM_LEFT_ROTATE(MP_GET_FIELD_PTR, dst, sn, cs, A);         \
         return MP_OK;                                                   \
     }                                                                   \
                                                                         \
@@ -120,7 +120,7 @@ ENCODE(double, Dbl)
     {                                                                   \
         T sn = SIN(theta);                                              \
         T cs = COS(theta);                                              \
-        MP_XFORM_RIGHT_ROTATE(MP_GET_FIELD_ARROW, dst, A, sn, cs);      \
+        MP_XFORM_RIGHT_ROTATE(MP_GET_FIELD_PTR, dst, A, sn, cs);        \
         return MP_OK;                                                   \
     }
 
@@ -137,7 +137,7 @@ ENCODE(double, Dbl, sin,  cos)
     T                                                                   \
     MpDeterminantAffineTransform##SFX(const MpAffineTransform##SFX* A)  \
     {                                                                   \
-        return MP_XFORM_DETERMINANT(MP_GET_FIELD_ARROW, A);             \
+        return MP_XFORM_DETERMINANT(MP_GET_FIELD_PTR, A);               \
     }
 
 ENCODE(float,  Flt)
@@ -154,7 +154,7 @@ ENCODE(double, Dbl)
     MpInverseAffineTransform##SFX(MpAffineTransform##SFX* dst,          \
                                   const MpAffineTransform##SFX* A)      \
     {                                                                   \
-        MP_XFORM_INVERSE(T, MP_GET_FIELD_ARROW, dst, A);                \
+        MP_XFORM_INVERSE(T, MP_GET_FIELD_PTR, dst, A);                  \
         return MP_OK;                                                   \
     }
 
@@ -173,7 +173,7 @@ ENCODE(double, Dbl)
                                       const MpAffineTransform##SFX* A,  \
                                       const MpAffineTransform##SFX* B)  \
     {                                                                   \
-        MP_XFORM_LEFT_DIVIDE(T, MP_GET_FIELD_ARROW, dst, A, B);         \
+        MP_XFORM_LEFT_DIVIDE(T, MP_GET_FIELD_PTR, dst, A, B);           \
         return MP_OK;                                                   \
     }                                                                   \
                                                                         \
@@ -182,7 +182,7 @@ ENCODE(double, Dbl)
                                        const MpAffineTransform##SFX* A, \
                                        const MpAffineTransform##SFX* B) \
     {                                                                   \
-        MP_XFORM_RIGHT_DIVIDE(T, MP_GET_FIELD_ARROW, dst, A, B);        \
+        MP_XFORM_RIGHT_DIVIDE(T, MP_GET_FIELD_PTR, dst, A, B);          \
         return MP_OK;                                                   \
     }
 
@@ -200,7 +200,7 @@ ENCODE(double, Dbl)
     MpInterceptAffineTransform##SFX(T* xptr, T* yptr,                   \
                                     const MpAffineTransform##SFX* A)    \
     {                                                                   \
-        MP_XFORM_INTERCEPT(T, MP_GET_FIELD_ARROW, *xptr, *yptr, A);     \
+        MP_XFORM_INTERCEPT(T, MP_GET_FIELD_PTR, *xptr, *yptr, A);       \
         return MP_OK;                                                   \
     }
 
